@@ -43,7 +43,7 @@
 ---
 
 ## 📋 ورکفلوهای موجود
-
+<div align="right">
 | ورکفلو | هدف |
 |---------|-----|
 | **[⬇️ دانلود از URL](URL-Downloader-README.fa.md)** | دانلود هر فایلی از لینک مستقیم |
@@ -52,7 +52,9 @@
 | **[🔵 RustDesk دسکتاپ remoto](RustDesk-README.fa.md)** | دسکتاپ remoto کامل |
 | **[🖥️ دسترسی SSH](tmate-SSH-README.fa.md)** | دسترسی SSH موقت |
 | **[🛠 ابزارهای نگهداری](Maintenance-README.fa.md)** | پاکسازی مخزن |
+</div>
 
+<br>
 ---
 
 ## 🚀 نحوه استفاده
