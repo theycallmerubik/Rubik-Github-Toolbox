@@ -1,0 +1,45 @@
+name: 🖥️ SSH to Runner (tmate)
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit_access:
+        description: 'Limit access to only you (recommended)'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  tmate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: TheyCallMeRubik
+        run: |
+          echo "========================================"
+          echo "🖥️  SSH Access via tmate Started"
+          echo ""
+          echo "Workflow by @TheyCallMeRubik"
+          echo "Original idea from https://github.com/maanimis/github-sandbox"
+          echo "Built with ❤️ and hope for free iran"
+          echo ""
+          echo "========================================"
+
+      - name: Start SSH Session with tmate
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: ${{ github.event.inputs.limit_access }}
+          # Optional: You can add a custom timeout if needed
+          # timeout-minutes: 360
+
+      - name: TheyCallMeRubik
+        if: always()
+        run: |
+          echo "========================================"
+          echo "🖥️  SSH Session Ended"
+          echo ""
+          echo "Workflow by @TheyCallMeRubik"
+          echo "Built with ❤️ and hope for free iran"
+          echo ""
+          echo "========================================"
