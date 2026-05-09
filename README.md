@@ -71,7 +71,7 @@ After forking:
 
 ### 3. (Optional but Recommended) Add YouTube Cookies
 
-See the dedicated section in **[YouTube Downloader Guide](YouTube-Downloader-README.md#important-setting-up-youtube-cookies-(recommended))**.
+See the dedicated section in **[YouTube Downloader Guide](YouTube-Downloader-README.md#important-setting-up-youtube-cookies-recommended)**.
 
 ---
 
