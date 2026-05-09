@@ -1,0 +1,201 @@
+name: 🛠 Maintenance Tools
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Select Action to Perform'
+        required: true
+        default: 'Clean Downloads Folder'
+        type: choice
+        options:
+          - Clean Downloads Folder
+          - Clean Pages Folder
+          - Clean Videos Folder
+          - Sort Files in Downloads
+
+jobs:
+  maintenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Show Workflow Signature
+        run: |
+          echo "========================================"
+          echo "🛠️  GitHub Repository Maintenance Tool"
+          echo ""
+          echo "Workflow by @TheyCallMeRubik"
+          echo "Built with ❤️ and hope for free iran"
+          echo ""
+          echo "Selected Action: ${{ github.event.inputs.action }}"
+          echo "========================================"
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+      # ===================================================================
+      - name: Clean Downloads Folder
+        if: github.event.inputs.action == 'Clean Downloads Folder'
+        run: |
+          echo "🗑️ Starting Downloads folder cleanup..."
+
+          if [ -d "downloads" ]; then
+            git rm -rf downloads/ 2>/dev/null || true
+            rm -rf downloads 2>/dev/null || true
+            echo "✅ Old downloads folder removed"
+          fi
+
+          mkdir -p downloads
+
+          cat > downloads/README.md << 'EOF'
+# 📥 Downloads
+
+---
+
+**This folder is currently empty.**
+
+Use the download workflows to add files here.
+
+---
+
+**Important:** Please clean this folder regularly to keep the repository under GitHub size limits.
+
+*tool created by @TheyCallMeRubik*
+EOF
+
+          git add downloads/README.md
+
+          if git diff --staged --quiet; then
+            echo "No changes to commit - folder is already clean."
+          else
+            git commit -m "[Maintenance] Clean downloads folder [skip ci]"
+            echo "✅ Downloads folder cleaned and committed."
+          fi
+
+      # ===================================================================
+      - name: Clean Pages Folder
+        if: github.event.inputs.action == 'Clean Pages Folder'
+        run: |
+          echo "🗑️ Starting Pages folder cleanup..."
+
+          rm -rf pages
+          mkdir -p pages
+
+          cat > pages/README.md << 'EOF'
+# 🌐 Pages Archive
+
+---
+
+The folder is empty. Start browsing websites using the **Browse the Web** workflow.
+
+---
+
+*Maintained by @TheyCallMeRubik*
+EOF
+
+          git add pages/
+
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "[Maintenance] Clean pages folder [skip ci]"
+            echo "✅ Pages folder cleaned and committed."
+          fi
+
+      # ===================================================================
+      - name: Clean Videos Folder
+        if: github.event.inputs.action == 'Clean Videos Folder'
+        run: |
+          echo "🗑️ Starting Videos folder cleanup..."
+
+          rm -rf videos
+          mkdir -p videos
+
+          cat > videos/README.md << 'EOF'
+# 🎥 Videos
+
+---
+
+The folder is empty. Use video downloader workflows to add content here.
+
+---
+
+*Maintained by @TheyCallMeRubik*
+EOF
+
+          git add videos/
+
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "[Maintenance] Clean videos folder [skip ci]"
+            echo "✅ Videos folder cleaned and committed."
+          fi
+
+      # ===================================================================
+      - name: Sort Files in Downloads
+        if: github.event.inputs.action == 'Sort Files in Downloads'
+        run: |
+          echo "📂 Starting file sorting in downloads..."
+
+          cd downloads 2>/dev/null || { echo "Downloads folder does not exist. Nothing to sort."; exit 0; }
+
+          for file in *; do
+            if [[ -f "$file" ]]; then
+              base="${file%.zip}"
+              base="${base%.z[0-9][0-9]}"
+              base="${base%.deb}"
+              base="${base%.part}"
+              base="${base%.7z}"
+              
+              if [[ "$base" != "$file" && -n "$base" ]]; then
+                echo "📁 Organizing: $file → $base/"
+                mkdir -p "$base"
+                mv "$file" "$base/" 2>/dev/null || true
+              fi
+            fi
+          done
+
+          cd "$GITHUB_WORKSPACE"
+
+          git add downloads/ 2>/dev/null || true
+
+          if git diff --staged --quiet; then
+            echo "No files needed sorting."
+          else
+            git commit -m "[Maintenance] Sort split files into folders [skip ci]"
+            echo "✅ Files organized successfully."
+          fi
+
+      # ===================================================================
+      - name: Push Changes
+        if: success()
+        run: |
+          echo "Pushing changes to repository..."
+          git pull --rebase origin "${{ github.ref_name }}" || true
+          git push origin HEAD:"${{ github.ref_name }}" || {
+            echo "Push failed, trying force push after rebase..."
+            git push --force-with-lease origin HEAD:"${{ github.ref_name }}"
+          }
+
+      - name: Final Signature
+        if: always()
+        run: |
+          echo "========================================"
+          echo "✅ Maintenance Task Completed"
+          echo "Action: ${{ github.event.inputs.action }}"
+          echo ""
+          echo "Workflow by @TheyCallMeRubik"
+          echo "Built with ❤️ and hope for free iran"
+          echo "========================================"
