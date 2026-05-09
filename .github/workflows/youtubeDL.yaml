@@ -40,28 +40,40 @@ jobs:
         run: |
           echo "========================================"
           echo "🚀 YouTube Downloader Workflow Started"
+          echo ""
           echo "Workflow by @TheyCallMeRubik"
+          echo "Built with ❤️ and hope for free iran"
+          echo ""
           echo "========================================"
 
       - name: Start Cloudflare WARP proxy
         run: |
+          echo "Starting Cloudflare WARP container..."
           docker network create warp-net 2>/dev/null || true
-          docker run -d --name warp --restart=always --network warp-net \
-            -p 1080:1080 --cap-add NET_ADMIN \
+
+          docker run -d \
+            --name warp \
+            --restart=always \
+            --network warp-net \
+            -p 1080:1080 \
+            --cap-add NET_ADMIN \
             --sysctl net.ipv6.conf.all.disable_ipv6=0 \
             --sysctl net.ipv4.conf.all.src_valid_mark=1 \
             -v warp-data:/var/lib/cloudflare-warp \
             caomingjun/warp
+
+          echo "Waiting for WARP to initialize..."
           sleep 30
 
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq python3-pip ffmpeg p7zip-full curl jq unzip
+          sudo apt-get install -y -qq python3-pip ffmpeg p7zip-full curl jq bc unzip
           curl -fsSL https://deno.land/install.sh | sh
           export DENO_INSTALL="$HOME/.deno"
           export PATH="$DENO_INSTALL/bin:$PATH"
           echo "$DENO_INSTALL/bin" >> $GITHUB_PATH
+          deno --version
           pip3 install --upgrade yt-dlp
 
       - name: Setup YouTube Cookies
@@ -69,120 +81,210 @@ jobs:
         run: |
           if [ -n "${{ secrets.YOUTUBE_COOKIES }}" ]; then
             echo "${{ secrets.YOUTUBE_COOKIES }}" | base64 -d > cookies.txt
-            echo "✅ Cookies loaded ($(wc -c < cookies.txt) bytes)"
+            echo "✅ Cookies loaded successfully ($(wc -c < cookies.txt) bytes)"
           else
-            echo "❌ ERROR: YOUTUBE_COOKIES secret not found!" && exit 1
+            echo "❌ ERROR: YOUTUBE_COOKIES secret not found!"
+            echo ""
+            echo "You chose to use cookies (recommended), but the secret is not set."
+            echo "Please follow the instructions in the repository README to add the YOUTUBE_COOKIES secret."
+            echo ""
+            echo "Workflow stopped."
+            exit 1
           fi
 
       - name: Download YouTube video
         run: |
           set -euo pipefail
-
           URL="${{ github.event.inputs.youtube_url }}"
           QUALITY="${{ github.event.inputs.quality }}"
           ZIP_PASSWORD="${{ github.event.inputs.password }}"
           SPLIT_MB=90
-          SPLIT_BYTES=$((SPLIT_MB * 1024 * 1024))
+          SPLIT_BYTES=$(( SPLIT_MB * 1024 * 1024 ))
+
           BACKUP_DIR="/tmp/video_backup_$$"
-
           mkdir -p "$BACKUP_DIR" videos tmp_downloads
+          echo "$BACKUP_DIR" > /tmp/backup_dir_path.txt
 
+          echo "Downloading: $URL"
+          echo "Quality: $QUALITY"
+          echo "Cookies: $([ -f cookies.txt ] && echo "ENABLED" || echo "DISABLED")"
+
+          # ==================== FORMAT SELECTION ====================
           case "$QUALITY" in
-            audio) FORMAT="bestaudio/best" ;;
-            best) FORMAT="bestvideo+bestaudio/best" ;;
-            1440) FORMAT="bestvideo[height<=1440]+bestaudio/best" ;;
-            1080) FORMAT="bestvideo[height<=1080]+bestaudio/best" ;;
-            720)  FORMAT="bestvideo[height<=720]+bestaudio/best" ;;
-            480)  FORMAT="bestvideo[height<=480]+bestaudio/best" ;;
-            360)  FORMAT="bestvideo[height<=360]+bestaudio/best" ;;
-            240)  FORMAT="bestvideo[height<=240]+bestaudio/best" ;;
-            lowest) FORMAT="worstvideo+worstaudio/worst" ;;
-            *) FORMAT="bestvideo+bestaudio/best" ;;
+            audio)   FORMAT="bestaudio/best" ;;
+            best)    FORMAT="bestvideo+bestaudio/best" ;;
+            1440)    FORMAT="bestvideo[height<=1440]+bestaudio/best[height<=1440]/best" ;;
+            1080)    FORMAT="bestvideo[height<=1080]+bestaudio/best[height<=1080]/best" ;;
+            720)     FORMAT="bestvideo[height<=720]+bestaudio/best[height<=720]/best" ;;
+            480)     FORMAT="bestvideo[height<=480]+bestaudio/best[height<=480]/best" ;;
+            360)     FORMAT="bestvideo[height<=360]+bestaudio/best[height<=360]/best" ;;
+            240)     FORMAT="bestvideo[height<=240]+bestaudio/best[height<=240]/best" ;;
+            lowest)  FORMAT="worstvideo+worstaudio/worst" ;;
+            *)       FORMAT="bestvideo+bestaudio/best" ;;
           esac
 
-          COMMON_FLAGS="--merge-output-format mp4 --output tmp_downloads/%(title)s.%(ext)s --no-part --no-playlist --retries 10 --fragment-retries 10"
-          COOKIE_FLAG=$([ -f cookies.txt ] && echo "--cookies cookies.txt" || echo "")
+          COMMON_FLAGS="--merge-output-format mp4 --output tmp_downloads/%(title)s.%(ext)s --no-part --no-playlist --retries 10 --fragment-retries 10 --no-check-certificates"
 
+          COOKIE_FLAG=""
+          [ -f cookies.txt ] && COOKIE_FLAG="--cookies cookies.txt"
+
+          # Download Methods
           METHODS=(
             "${COOKIE_FLAG} --extractor-args youtube:player_client=web,android,mweb,ios --concurrent-fragments 8"
             "${COOKIE_FLAG} --extractor-args youtube:player_client=android,web"
-            "--proxy socks5://127.0.0.1:1080 ${COOKIE_FLAG} --extractor-args youtube:player_client=web"
+            "${COOKIE_FLAG} --extractor-args youtube:player_client=mweb,web,android_vr"
+            "${COOKIE_FLAG} --extractor-args youtube:player_client=web --js-runtimes deno"
+            "--proxy socks5://127.0.0.1:1080 --extractor-args youtube:player_client=web,android,mweb"
+            "--proxy socks5://127.0.0.1:1080 --extractor-args youtube:player_client=android"
           )
 
+          DOWNLOAD_SUCCESS=false
           for idx in "${!METHODS[@]}"; do
-            echo "Trying method $((idx+1))..."
+            METHOD_NUM=$((idx+1))
+            echo "Trying method \( METHOD_NUM/ \){#METHODS[@]}..."
             if yt-dlp --format "$FORMAT" $COMMON_FLAGS ${METHODS[$idx]} "$URL"; then
-              echo "✅ Download successful!"
+              DOWNLOAD_SUCCESS=true
+              echo "✅ Download successful with method $METHOD_NUM!"
               break
+            else
+              echo "Method $METHOD_NUM failed..."
+              sleep $((RANDOM % 10 + 5))
             fi
-            sleep 10
           done
 
-          find tmp_downloads -name "*.part" -delete 2>/dev/null || true
+          if ! $DOWNLOAD_SUCCESS; then
+            echo "❌ All download methods failed!" && exit 1
+          fi
 
-          # Process downloaded file
+          find tmp_downloads -name "*.part" -delete
+
+          REPO_OWNER="${{ github.repository_owner }}"
+          REPO_NAME="${{ github.event.repository.name }}"
+          BRANCH="${GITHUB_REF_NAME}"
+
+          # ==================== SANITIZATION & HELPER FUNCTIONS ====================
+          sanitize_name() {
+            echo "$1" | sed 's/[^a-zA-Z0-9._ -]/-/g' | sed 's/ /-/g' | sed 's/-+/-/g' | sed 's/^-//;s/-$//' | cut -c1-100
+          }
+
+          urlencode() {
+            python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$1"
+          }
+
+          # ==================== PROCESS DOWNLOADED FILES ====================
           for FILE in tmp_downloads/*; do
             [ -f "$FILE" ] || continue
-
             SIZE=$(stat -c%s "$FILE")
             BASENAME=$(basename "$FILE")
-            SAFE_NAME=$(echo "$BASENAME" | sed 's/[^a-zA-Z0-9._ -]/-/g' | sed 's/ /-/g' | sed 's/-+/-/g' | cut -c1-100)
+            FILENAME_NO_EXT="${BASENAME%.*}"
+            EXT="${BASENAME##*.}"
+
+            SAFE_NAME=$(sanitize_name "$FILENAME_NO_EXT")
+
+            # Handle duplicate folder names
             FOLDER_NAME="$SAFE_NAME"
+            COUNTER=1
+            while [ -d "$BACKUP_DIR/$FOLDER_NAME" ] || [ -d "videos/$FOLDER_NAME" ]; do
+              FOLDER_NAME="${SAFE_NAME}_$COUNTER"
+              COUNTER=$((COUNTER + 1))
+            done
 
-            mkdir -p "$BACKUP_DIR/$FOLDER_NAME"
+            mkdir -p "\( BACKUP_DIR/ \){FOLDER_NAME}"
+            FOLDER_ENCODED=\( (urlencode " \){FOLDER_NAME}")
 
-            # Create archive
+            echo "Processing: $BASENAME → Folder: $FOLDER_NAME"
+
             if [ "$SIZE" -gt "$SPLIT_BYTES" ]; then
-              7z a -v${SPLIT_MB}m -p"${ZIP_PASSWORD}" -mhe=on -mx=0 "$BACKUP_DIR/${FOLDER_NAME}/${FOLDER_NAME}.7z" "$FILE"
+              echo "Large file → Splitting into ${SPLIT_MB}MB parts"
+              if [ -n "$ZIP_PASSWORD" ]; then
+                7z a -v\( {SPLIT_MB}m -p" \){ZIP_PASSWORD}" -mhe=on -mx=0 "\( BACKUP_DIR/ \){FOLDER_NAME}/${FOLDER_NAME}.7z" "$FILE"
+              else
+                7z a -v${SPLIT_MB}m -mx=0 "\( BACKUP_DIR/ \){FOLDER_NAME}/${FOLDER_NAME}.7z" "$FILE"
+              fi
             else
               if [ -n "$ZIP_PASSWORD" ]; then
-                7z a -p"${ZIP_PASSWORD}" -mhe=on -mx=0 "$BACKUP_DIR/${FOLDER_NAME}/${FOLDER_NAME}.7z" "$FILE"
+                7z a -p"${ZIP_PASSWORD}" -mhe=on -mx=0 "\( BACKUP_DIR/ \){FOLDER_NAME}/${FOLDER_NAME}.7z" "$FILE"
               else
-                cp "$FILE" "$BACKUP_DIR/${FOLDER_NAME}/${FOLDER_NAME}.${BASENAME##*.}"
+                cp "$FILE" "\( BACKUP_DIR/ \){FOLDER_NAME}/\( {FOLDER_NAME}. \){EXT}"
               fi
             fi
 
-            # Create README.md safely (NO line starting with ---)
-            cat > "$BACKUP_DIR/${FOLDER_NAME}/README.md" << EOF
-# ${FOLDER_NAME}
-
-Video Information
-=================
-
-Original Name : ${BASENAME}
-Quality       : ${QUALITY}
-Size          : $((SIZE / 1024 / 1024)) MB
-Password      : $([ -n "\$ZIP_PASSWORD" ] && echo "YES" || echo "NO")
-
-────────────────────────────────────────
-
-Please delete this folder after downloading 
-to keep the repository size small.
-
-Generated by GitHub Actions
-Workflow by @TheyCallMeRubik
-EOF
+            # ==================== CREATE README WITH CLEANUP NOTE ====================
+            README_FILE="\( BACKUP_DIR/ \){FOLDER_NAME}/README.md"
+            {
+              echo "# ${FOLDER_NAME}"
+              echo ""
+              echo "---"
+              echo ""
+              echo "## Video Information"
+              echo ""
+              echo "| Property | Value |"
+              echo "|----------|-------|"
+              echo "| **Original Name** | \`${BASENAME}\` |"
+              echo "| **Quality** | **${QUALITY}** |"
+              echo "| **Size** | $((SIZE / 1024 / 1024)) MB |"
+              echo "| **Status** | **Complete (100%)** |"
+              if [ -n "$ZIP_PASSWORD" ]; then
+                echo "| **Password Protected** | **YES** |"
+              else
+                echo "| **Password Protected** | **NO** |"
+              fi
+              echo ""
+              echo "---"
+              echo ""
+              echo "## Important Note"
+              echo ""
+              echo "**Please clean up this folder after downloading the video.**"
+              echo "GitHub repositories have size limits. Removing old files helps keep this repo fast and healthy."
+              echo ""
+              echo "---"
+              echo ""
+              echo "*Generated by GitHub Actions*"
+              echo ""
+              echo "---"
+              echo ""
+              echo "Workflow by @TheyCallMeRubik"
+              echo "Built with ❤️ and hope for free iran"
+            } > "$README_FILE"
           done
 
           rm -rf tmp_downloads
 
-          # Commit changes
+          # ==================== COMMIT & PUSH ====================
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
           mkdir -p videos
           cp -r "$BACKUP_DIR"/* videos/ 2>/dev/null || true
 
-          cat > videos/README.md << 'MAIN_EOF'
-# DOWNLOADED VIDEOS
-MAIN_EOF
+          # Update Master README
+          cat > videos/README.md << 'EOL'
+# DOWNLOADED VIDEOS LIST
+
+---
+EOL
 
           for folder in videos/*/; do
             [ -d "$folder" ] || continue
-            name=$(basename "$folder")
-            echo "- 🎬 [$name](./${name})" >> videos/README.md
+            FOLDER_NAME=$(basename "$folder")
+            [ -f "$folder/README.md" ] || continue
+            FOLDER_ENCODED=$(urlencode "$FOLDER_NAME")
+            echo "- 🎬 [\( FOLDER_NAME](https://github.com/ \){REPO_OWNER}/\( {REPO_NAME}/tree/ \){BRANCH}/videos/${FOLDER_ENCODED})" >> videos/README.md
           done
 
           git add -A videos/
-          git commit -m "[YouTube] Add video [skip ci]" || echo "No changes"
-          git push
+          git commit -m "[YouTube] Add video [skip ci]" || echo "No changes to commit"
+          git push origin HEAD:"$BRANCH" || {
+            git fetch origin "$BRANCH" && git reset --hard origin/"$BRANCH" && git push origin HEAD:"$BRANCH"
+          }
+
+      - name: Final Signature
+        if: always()
+        run: |
+          echo "========================================"
+          echo "✅ Workflow Completed"
+          echo ""
+          echo "Workflow by @TheyCallMeRubik"
+          echo "Built with ❤️ and hope for free iran"
+          echo ""
+          echo "========================================"
