@@ -1,4 +1,4 @@
-name: 🎬 Enhanced YouTube Downloader
+name: 🟥 Enhanced YouTube Downloader
 
 on:
   workflow_dispatch:
