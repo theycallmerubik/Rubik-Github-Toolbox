@@ -1,4 +1,4 @@
-<div align="right">
+<div direction="rtl">
 # 🔵 RustDesk Remote Desktop
 
 اجرای دسکتاپ کامل (XFCE + فایرفاکس) روی سرور رایگان گیت‌هاب با RustDesk.
