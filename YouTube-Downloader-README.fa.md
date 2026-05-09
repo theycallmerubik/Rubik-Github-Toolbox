@@ -18,7 +18,7 @@
 
 #### مراحل استخراج کوکی:
 
-1. [افزونه](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) **Get cookies.txt LOCALLY** را نصب کنید.
+1. [افزونه](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) "**Get cookies.txt LOCALLY**" را نصب کنید.
 2. وارد حساب یوتیوب خود شوید.
 3. روی افزونه کلیک کنید و **Export cookies** را بزنید → فایل را با نام `cookies.txt` ذخیره کنید.
 4. محتوای فایل را **Base64** کنید:
