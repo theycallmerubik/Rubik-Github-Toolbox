@@ -257,19 +257,20 @@ jobs:
           mkdir -p videos
           cp -r "$BACKUP_DIR"/* videos/ 2>/dev/null || true
 
-          # Update Master README
-          cat > videos/README.md << 'EOL'
-# DOWNLOADED VIDEOS LIST
-
----
-EOL
+          # ==================== UPDATE MASTER README ====================
+          printf '# DOWNLOADED VIDEOS LIST\n---\n\n' > videos/README.md
 
           for folder in videos/*/; do
             [ -d "$folder" ] || continue
             FOLDER_NAME=$(basename "$folder")
             [ -f "$folder/README.md" ] || continue
             FOLDER_ENCODED=$(urlencode "$FOLDER_NAME")
-            echo "- 🎬 [\( FOLDER_NAME](https://github.com/ \){REPO_OWNER}/\( {REPO_NAME}/tree/ \){BRANCH}/videos/${FOLDER_ENCODED})" >> videos/README.md
+            printf '- 🎬 [%s](https://github.com/%s/%s/tree/%s/videos/%s)\n' \
+              "$FOLDER_NAME" \
+              "${REPO_OWNER}" \
+              "${REPO_NAME}" \
+              "${BRANCH}" \
+              "$FOLDER_ENCODED" >> videos/README.md
           done
 
           git add -A videos/
