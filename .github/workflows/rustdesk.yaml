@@ -4,9 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       password:
-        description: 'Create rustDesk Password (minimum 6 characters)'
+        description: 'Create RustDesk Password (minimum 6 characters)'
         required: true
         type: string
+
       resolution:
         description: 'Screen Resolution (e.g. 1280x720 or 1920x1080)'
         required: false
@@ -17,11 +18,12 @@ jobs:
   rustdesk:
     runs-on: ubuntu-latest
     timeout-minutes: 360
+
     permissions:
       contents: write
 
     steps:
-      - name: TheyCallMeRubik
+      - name: Startup Banner
         run: |
           echo "========================================"
           echo "🔵 RustDesk Remote Desktop Started"
@@ -34,48 +36,68 @@ jobs:
       - name: Install Desktop Environment & Tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq xfce4 xfce4-goodies xvfb firefox curl wget jq
+
+          sudo apt-get install -y -qq \
+            xfce4 \
+            xfce4-goodies \
+            xvfb \
+            firefox \
+            curl \
+            wget \
+            jq
 
       - name: Download and Install Latest RustDesk
         run: |
           echo "Fetching latest RustDesk version..."
+
           RELEASE_JSON=$(curl -s https://api.github.com/repos/rustdesk/rustdesk/releases/latest)
-          
-          DEB_URL=$(echo "\( RELEASE_JSON" | jq -r '.assets[] | select(.name | test("rustdesk-.*-x86_64\\.deb \)")) | .browser_download_url' | head -1)
-          
-          if [ -z "$DEB_URL" ]; then
-            TAG=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
-            VERSION="${TAG#v}"
-            DEB_URL="https://github.com/rustdesk/rustdesk/releases/download/\( {TAG}/rustdesk- \){VERSION}-x86_64.deb"
+
+          DEB_URL=$(echo "$RELEASE_JSON" | jq -r '
+            .assets[]
+            | select(.name | test("x86_64\\.deb$"))
+            | .browser_download_url
+          ' | head -n 1)
+
+          if [ -z "$DEB_URL" ] || [ "$DEB_URL" = "null" ]; then
+            echo "❌ Could not find RustDesk .deb package"
+            exit 1
           fi
-          
+
+          echo "Downloading: $DEB_URL"
+
           wget -q "$DEB_URL" -O rustdesk.deb
-          sudo apt install -y ./rustdesk.deb
+
+          sudo apt-get install -y ./rustdesk.deb
+
           echo "✅ RustDesk installed successfully"
 
       - name: Start Virtual Desktop and RustDesk
         env:
           RUSTDESK_PASSWORD: ${{ github.event.inputs.password }}
           RESOLUTION: ${{ github.event.inputs.resolution }}
+
         run: |
           echo "🖥️ Starting virtual desktop (${RESOLUTION})..."
-          
+
           export DISPLAY=:99
+
           Xvfb :99 -screen 0 ${RESOLUTION}x24 &
           sleep 3
-          
+
           startxfce4 &
-          sleep 5
-          
+          sleep 8
+
           rustdesk --password "$RUSTDESK_PASSWORD" &
-          sleep 4
-          
+          sleep 8
+
           echo ""
           echo "========================================"
           echo "✅ RustDesk Remote Desktop is Ready!"
           echo ""
+
           echo "🔹 RustDesk ID:"
           rustdesk --get-id
+
           echo ""
           echo "🔐 Password: (Set by you - not shown for security)"
           echo "📺 Resolution: ${RESOLUTION}"
@@ -84,10 +106,12 @@ jobs:
           echo "⏱️ This session will remain active for up to 6 hours."
           echo "========================================"
 
-          # Keep the runner alive
-          while true; do sleep 3600; done
+          # Keep runner alive
+          while true; do
+            sleep 3600
+          done
 
-      - name: TheyCallMeRubik
+      - name: Shutdown Banner
         if: always()
         run: |
           echo "========================================"
