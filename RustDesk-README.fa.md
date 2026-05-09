@@ -5,13 +5,13 @@
 
 ### نحوه استفاده
 
-1. به **Actions** → **🔵 RustDesk Remote Desktop** بروید.
-2. روی **Run workflow** کلیک کنید.
-3. اطلاعات را وارد کنید:
+1) به **Actions** → **🔵 RustDesk Remote Desktop** بروید.
+2) روی **Run workflow** کلیک کنید.
+3) اطلاعات را وارد کنید:
    - **password**: حداقل ۶ کاراکتر (رمز اتصال RustDesk)
    - **resolution** (اختیاری): مثلاً `1920x1080` یا `1280x720`
 
-4. workflow را اجرا کنید.
+4) workflow را اجرا کنید.
 
 ### بعد از اجرا
 - حدود ۱ تا ۲ دقیقه صبر کنید.
