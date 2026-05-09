@@ -1,0 +1,316 @@
+name: 🌐 Browser
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'URL to visit'
+        required: true
+        type: string
+      mode:
+        description: 'Capture Mode'
+        required: false
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - text-only
+      zip_password:
+        description: 'Password for encrypted archive (leave blank for no encryption)'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  browse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Show Workflow Signature
+        run: |
+          echo "========================================"
+          echo "🌐  GitHub Web Browser & Archiver Started"
+          echo ""
+          echo "Workflow by @TheyCallMeRubik"
+          echo "Built with ❤️ and hope for free iran"
+          echo ""
+          echo "========================================"
+
+      - name: Configure Git
+        run: |
+          git config --global http.postBuffer 524288000
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq curl zip p7zip-full
+
+      - name: Setup Node.js and Puppeteer
+        run: |
+          npm init -y > /dev/null 2>&1
+          npm install puppeteer > /dev/null 2>&1
+
+      - name: Create Puppeteer Script
+        run: |
+          cat > screenshot.js << 'EOF'
+          const puppeteer = require('puppeteer');
+          const fs = require('fs');
+          const url = process.argv[2];
+          const screenshotPath = process.argv[3];
+          const htmlPath = process.argv[4];
+
+          (async () => {
+            const browser = await puppeteer.launch({
+              headless: true,
+              args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+            });
+            const page = await browser.newPage();
+            await page.setViewport({ width: 1280, height: 720 });
+
+            try {
+              await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+
+              await page.evaluate(async () => {
+                await new Promise((resolve) => {
+                  let totalHeight = 0;
+                  const distance = 300;
+                  const timer = setInterval(() => {
+                    window.scrollBy(0, distance);
+                    totalHeight += distance;
+                    if (totalHeight >= document.body.scrollHeight - window.innerHeight) {
+                      clearInterval(timer);
+                      resolve();
+                    }
+                  }, 150);
+                });
+              });
+
+              await page.waitForTimeout(2000);
+
+              await page.screenshot({ path: screenshotPath, fullPage: true });
+              console.log('✅ Screenshot saved');
+
+              const html = await page.content();
+              fs.writeFileSync(htmlPath, html);
+              console.log('✅ Rendered HTML saved');
+            } catch (err) {
+              console.error('❌ Puppeteer Error:', err.message);
+              process.exitCode = 1;
+            } finally {
+              await browser.close();
+            }
+          })();
+          EOF
+
+      - name: Browse URL and Archive Content
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          RAW_URL="${{ github.event.inputs.url }}"
+          MODE="${{ github.event.inputs.mode }}"
+          ZIP_PASSWORD="${{ github.event.inputs.zip_password }}"
+
+          # URL Normalization
+          if [[ ! "$RAW_URL" =~ ^https?:// ]]; then
+            if curl -fsL --connect-timeout 8 --max-time 15 -o /dev/null "https://$RAW_URL"; then
+              URL="https://$RAW_URL"
+            else
+              URL="http://$RAW_URL"
+            fi
+          else
+            URL="$RAW_URL"
+          fi
+
+          # ==================== HELPER FUNCTIONS ====================
+          sanitize_name() {
+            echo "$1" | sed 's/[^a-zA-Z0-9._ -]/-/g' | sed 's/ /-/g' | sed 's/-+/-/g' | sed 's/^-//;s/-$//' | cut -c1-80
+          }
+
+          get_unique_folder_name() {
+            local BASE_NAME="$1"
+            local CANDIDATE="$BASE_NAME"
+            local COUNTER=1
+
+            while [ -d "pages/$CANDIDATE" ] || [ -f "pages/$CANDIDATE.zip" ] || [ -f "pages/$CANDIDATE.7z" ]; do
+              CANDIDATE="${BASE_NAME}_${COUNTER}"
+              COUNTER=$((COUNTER + 1))
+            done
+            echo "$CANDIDATE"
+          }
+
+          # ==================== GENERATE FOLDER NAME ====================
+          DOMAIN=$(echo "$URL" | awk -F/ '{print $3}' | sed 's/www\.//')
+          BASE_NAME=$(sanitize_name "$DOMAIN")
+
+          # Try to get page title for better naming (Full mode only)
+          if [[ "$MODE" == "full" ]]; then
+            TITLE=$(curl -sSL -A "Mozilla/5.0" "$URL" | grep -oP '(?<=<title>)[^<]+' | head -1 | xargs || echo "")
+            if [ -n "$TITLE" ]; then
+              CLEAN_TITLE=$(sanitize_name "$TITLE")
+              BASE_NAME=$(sanitize_name "${DOMAIN}-${CLEAN_TITLE}")
+            fi
+          fi
+
+          FOLDER_NAME=$(get_unique_folder_name "$BASE_NAME")
+          FOLDER="pages/$FOLDER_NAME"
+          MEDIA_DIR="$FOLDER/media"
+          mkdir -p "$FOLDER" "$MEDIA_DIR"
+
+          echo "📌 Processing Session: $FOLDER_NAME"
+
+          SCREENSHOT_OK=false
+          MEDIA_COUNT=0
+
+          if [[ "$MODE" == "full" ]]; then
+            if node screenshot.js "$URL" "$FOLDER/screenshot.png" "$FOLDER/page.html"; then
+              SCREENSHOT_OK=true
+              echo "✅ Full mode: Puppeteer succeeded"
+            else
+              echo "⚠️ Puppeteer failed. Falling back to curl..."
+              curl -sSL -A "Mozilla/5.0" -o "$FOLDER/page.html" "$URL" || {
+                echo "<html><body><h1>Failed to load page</h1></body></html>" > "$FOLDER/page.html"
+              }
+            fi
+
+            # Media Download
+            grep -oP '(?:href|src)="?\K[^"\s>]+' "$FOLDER/page.html" 2>/dev/null | sort -u > "$FOLDER/all_links.txt" || true
+
+            MEDIA_EXT='png|jpg|jpeg|gif|svg|webp|bmp|mp4|webm|pdf'
+            > "$FOLDER/downloaded_media.md"
+            echo "## Downloaded Media" > "$FOLDER/downloaded_media.md"
+            echo "" >> "$FOLDER/downloaded_media.md"
+
+            BASE_DOMAIN="$(echo "$URL" | awk -F/ '{print $1"//"$3}')"
+
+            while IFS= read -r link || [ -n "$link" ]; do
+              [[ -z "$link" || "$link" =~ ^# ]] && continue
+              if [[ "$link" =~ ^https?:// ]]; then
+                ABS_URL="$link"
+              elif [[ "$link" = /* ]]; then
+                ABS_URL="${BASE_DOMAIN}${link}"
+              else
+                ABS_URL="${BASE_DOMAIN}/${link}"
+              fi
+
+              ext_lower=$(echo "${link##*.}" | tr '[:upper:]' '[:lower:]')
+              if echo "$ext_lower" | grep -Eq "^($MEDIA_EXT)$"; then
+                SAFE_NAME=$(basename "$link" | sed 's/[?#].*//' | sanitize_name)
+                [[ -z "$SAFE_NAME" ]] && SAFE_NAME="file_$(date +%s)"
+
+                if curl -sSL --retry 2 --max-time 45 -o "$MEDIA_DIR/$SAFE_NAME" "$ABS_URL"; then
+                  SIZE=$(stat -c%s "$MEDIA_DIR/$SAFE_NAME" 2>/dev/null || echo 0)
+                  if [ "$SIZE" -gt 0 ]; then
+                    if [[ "$ext_lower" =~ ^(png|jpg|jpeg|gif|webp|svg)$ ]]; then
+                      echo "![$SAFE_NAME](./media/$SAFE_NAME)" >> "$FOLDER/downloaded_media.md"
+                    else
+                      echo "- [$SAFE_NAME](./media/$SAFE_NAME) (${SIZE} bytes)" >> "$FOLDER/downloaded_media.md"
+                    fi
+                    ((MEDIA_COUNT++))
+                  fi
+                fi
+              fi
+            done < "$FOLDER/all_links.txt"
+          else
+            # Text-only mode
+            curl -sSL -A "Mozilla/5.0" -o "$FOLDER/page.html" "$URL" || {
+              echo "<html><body><h1>Failed to load page</h1></body></html>" > "$FOLDER/page.html"
+            }
+            echo "✅ Text-only mode completed"
+          fi
+
+          # ==================== CREATE INDEX.MD ====================
+          {
+            echo "# $FOLDER_NAME"
+            echo ""
+            echo "**Captured:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            echo "**Mode:** $MODE"
+            echo "**URL:** $URL"
+            echo ""
+            if [[ "$MODE" == "full" ]] && $SCREENSHOT_OK && [ -f "$FOLDER/screenshot.png" ]; then
+              echo "## Screenshot"
+              echo "![Full Page Screenshot](./screenshot.png)"
+              echo ""
+            fi
+            echo "## Rendered HTML"
+            echo "[page.html](./page.html)  ($(wc -c < "$FOLDER/page.html") bytes)"
+            echo ""
+            if [[ "$MODE" == "full" ]]; then
+              echo "## Media Files ($MEDIA_COUNT)"
+              if [ "$MEDIA_COUNT" -gt 0 ]; then
+                cat "$FOLDER/downloaded_media.md"
+              else
+                echo "_No media files downloaded._"
+              fi
+            else
+              echo "## Mode: Text Only"
+              echo "Only HTML source was captured."
+            fi
+            echo ""
+            echo "---"
+            echo ""
+            echo "**Workflow by @TheyCallMeRubik**"
+            echo "Built with ❤️ and hope for free iran"
+            echo ""
+            echo "*Generated by GitHub Web Browser Workflow*"
+          } > "$FOLDER/index.md"
+
+          # Update master list
+          BROWSE_FILE="browse.md"
+          if [ ! -f "$BROWSE_FILE" ]; then
+            echo "# 🌐 Browsed Websites Archive" > "$BROWSE_FILE"
+            echo "" >> "$BROWSE_FILE"
+          fi
+          echo "- [$FOLDER_NAME](./pages/${FOLDER_NAME}.zip) — $MODE mode — $MEDIA_COUNT media — $(date -u '+%Y-%m-%d %H:%M UTC')" >> "$BROWSE_FILE"
+
+          echo "FOLDER_NAME=$FOLDER_NAME" >> $GITHUB_ENV
+
+      - name: Create Archive
+        if: success()
+        env:
+          ZIP_PASSWORD: ${{ github.event.inputs.zip_password }}
+        run: |
+          FOLDER_NAME="${{ env.FOLDER_NAME }}"
+          cd pages
+          if [ -n "$ZIP_PASSWORD" ]; then
+            echo "🔒 Creating encrypted archive..."
+            7z a -p"${ZIP_PASSWORD}" -mhe=on -mx=0 "${FOLDER_NAME}.zip" "$FOLDER_NAME"
+          else
+            echo "📦 Creating ZIP archive..."
+            zip -qr "${FOLDER_NAME}.zip" "$FOLDER_NAME"
+          fi
+          rm -rf "$FOLDER_NAME"
+          cd "$GITHUB_WORKSPACE"
+
+      - name: Commit and Push Results
+        if: success()
+        run: |
+          git add pages/ browse.md
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "[Browse] ${FOLDER_NAME} (${{ github.event.inputs.mode }}) [skip ci]"
+            git pull --rebase origin "${{ github.ref_name }}" || true
+            git push origin HEAD:"${{ github.ref_name }}"
+          fi
+
+      - name: Final Signature
+        if: always()
+        run: |
+          echo "========================================"
+          echo "✅ Web Browsing Session Completed Successfully"
+          echo ""
+          echo "Workflow by @TheyCallMeRubik"
+          echo "Built with ❤️ and hope for free iran"
+          echo ""
+          echo "========================================"
