@@ -34,11 +34,11 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
-          
+
       - name: Show Workflow Signature
         run: |
           echo "========================================"
-          echo "⬇️  GitHub URL Downloader Started"
+          echo "⬇️ GitHub URL Downloader Started"
           echo ""
           echo "Workflow by @TheyCallMeRubik"
           echo "Built with ❤️ and hope for free iran"
@@ -65,10 +65,9 @@ jobs:
           ZIP_PASSWORD="${{ github.event.inputs.password }}"
           SPLIT_MB=90
           SPLIT_BYTES=$(( SPLIT_MB * 1024 * 1024 ))
-
           BACKUP_DIR="/tmp/download_backup_$$"
+
           mkdir -p "$BACKUP_DIR" downloads tmp_downloads
-          echo "$BACKUP_DIR" > /tmp/backup_dir_path.txt
 
           echo "=== GitHub Repository Limits Warning ==="
           echo "• Hard limit: 100 MB per file"
@@ -94,26 +93,27 @@ jobs:
 
             for ((attempt=1; attempt<=MAX_RETRIES; attempt++)); do
               echo "Attempt $attempt/$MAX_RETRIES for $FILENAME"
-
-              aria2c --split=8 --max-connection-per-server=4 --min-split-size=20M \
+              
+              if aria2c --split=8 --max-connection-per-server=4 --min-split-size=20M \
                 --max-tries=5 --retry-wait=5 --timeout=60 --connect-timeout=30 \
                 --check-certificate=false --allow-overwrite=true \
-                --dir="tmp_downloads" --out="$FILENAME" "$URL" && break
+                --dir="tmp_downloads" --out="$FILENAME" "$URL"; then
+                echo "✅ Successfully downloaded: $FILENAME"
+                return 0
+              fi
 
               echo "aria2c failed, trying curl..."
-              curl -L -f --retry 3 --retry-delay 5 --connect-timeout 30 \
-                -A "Mozilla/5.0" -o "tmp_downloads/$FILENAME" "$URL" && break
+              if curl -L -f --retry 3 --retry-delay 5 --connect-timeout 30 \
+                -A "Mozilla/5.0" -o "tmp_downloads/$FILENAME" "$URL"; then
+                echo "✅ Successfully downloaded: $FILENAME"
+                return 0
+              fi
 
               sleep $((attempt * 5))
             done
 
-            if [ -f "tmp_downloads/$FILENAME" ] && [ -s "tmp_downloads/$FILENAME" ]; then
-              echo "✅ Successfully downloaded: $FILENAME"
-              return 0
-            else
-              echo "❌ Failed to download: $FILENAME"
-              return 1
-            fi
+            echo "❌ Failed to download: $FILENAME"
+            return 1
           }
 
           # ==================== DOWNLOAD FILES ====================
@@ -121,16 +121,17 @@ jobs:
             ORIGINAL_NAME=$(basename "$URL" | sed 's/%20/ /g' | sed 's/[?#].*//')
             SAFE_NAME=$(sanitize_name "$ORIGINAL_NAME")
             echo "Downloading: $URL → $SAFE_NAME"
-            download_with_retry "$URL" "$SAFE_NAME" || echo "Failed: $SAFE_NAME"
+            download_with_retry "$URL" "$SAFE_NAME" || echo "⚠️ Failed: $SAFE_NAME"
           done
 
-          # ==================== PROCESS WITH 7z ====================
+          # ==================== PROCESS DOWNLOADED FILES ====================
           REPO_OWNER="${{ github.repository_owner }}"
           REPO_NAME="${{ github.event.repository.name }}"
           BRANCH="${GITHUB_REF_NAME}"
 
           for FILE in tmp_downloads/*; do
             [ -f "$FILE" ] || continue
+
             SIZE=$(stat -c%s "$FILE")
             BASENAME=$(basename "$FILE")
             SAFE_BASENAME=$(sanitize_name "$BASENAME")
@@ -142,89 +143,76 @@ jobs:
               COUNTER=$((COUNTER + 1))
             done
 
-            mkdir -p "\( BACKUP_DIR/ \){FOLDER_NAME}"
-            FOLDER_ENCODED=\( (urlencode " \){FOLDER_NAME}")
+            mkdir -p "$BACKUP_DIR/$FOLDER_NAME"
+            FOLDER_ENCODED=$(urlencode "$FOLDER_NAME")
 
-            echo "Processing: \( BASENAME ( \)((SIZE / 1024 / 1024)) MB)"
+            echo "Processing: $BASENAME ($(($SIZE / 1024 / 1024)) MB)"
 
             if [ "$SIZE" -gt "$SPLIT_BYTES" ]; then
-              echo "→ Splitting into ${SPLIT_MB}MB parts using 7z"
+              echo "→ Splitting into ${SPLIT_MB}MB parts"
               if [ -n "$ZIP_PASSWORD" ]; then
-                7z a -v\( {SPLIT_MB}m -p" \){ZIP_PASSWORD}" -mhe=on -mx=0 "\( BACKUP_DIR/ \){FOLDER_NAME}/${FOLDER_NAME}.7z" "$FILE"
+                7z a -v${SPLIT_MB}m -p"${ZIP_PASSWORD}" -mhe=on -mx=0 "$BACKUP_DIR/$FOLDER_NAME/${FOLDER_NAME}.7z" "$FILE"
               else
-                7z a -v${SPLIT_MB}m -mx=0 "\( BACKUP_DIR/ \){FOLDER_NAME}/${FOLDER_NAME}.7z" "$FILE"
+                7z a -v${SPLIT_MB}m -mx=0 "$BACKUP_DIR/$FOLDER_NAME/${FOLDER_NAME}.7z" "$FILE"
               fi
             else
               if [ -n "$ZIP_PASSWORD" ]; then
-                7z a -p"${ZIP_PASSWORD}" -mhe=on -mx=0 "\( BACKUP_DIR/ \){FOLDER_NAME}/${FOLDER_NAME}.7z" "$FILE"
+                7z a -p"${ZIP_PASSWORD}" -mhe=on -mx=0 "$BACKUP_DIR/$FOLDER_NAME/${FOLDER_NAME}.7z" "$FILE"
               else
-                cp "$FILE" "\( BACKUP_DIR/ \){FOLDER_NAME}/\( {FOLDER_NAME}. \){FILE##*.}"
+                cp "$FILE" "$BACKUP_DIR/$FOLDER_NAME/${FOLDER_NAME}.${FILE##*.}"
               fi
             fi
 
             # ==================== CREATE README ====================
-            README_FILE="\( BACKUP_DIR/ \){FOLDER_NAME}/README.md"
-            {
-              echo "# ${FOLDER_NAME}"
-              echo ""
-              echo "---"
-              echo ""
-              echo "## Download Information"
-              echo ""
-              echo "| Property | Value |"
-              echo "|----------|-------|"
-              echo "| **Original Name** | \`${BASENAME}\` |"
-              echo "| **Size** | $((SIZE / 1024 / 1024)) MB |"
-              echo "| **Status** | **Complete (100%)** |"
-              if [ -n "$ZIP_PASSWORD" ]; then
-                echo "| **Password Protected** | **YES** |"
-              else
-                echo "| **Password Protected** | **NO** |"
-              fi
-              echo ""
-              echo "---"
-              echo ""
-              echo "## Important Note"
-              echo ""
-              echo "**Please clean up this folder after you finish downloading.**"
-              echo "GitHub repositories have size limits. Removing old files helps keep this repository fast and healthy."
-              echo ""
-              echo "---"
-              echo ""
-              echo "*Generated by GitHub Actions*"
-              echo ""
-              echo "---"
-              echo ""
-              echo "Workflow by @TheyCallMeRubik"
-              echo "Built with ❤️ and hope for free iran"
-            } > "$README_FILE"
+            cat > "$BACKUP_DIR/$FOLDER_NAME/README.md" << EOF
+# ${FOLDER_NAME}
+
+---
+
+## Download Information
+
+| Property              | Value                          |
+|-----------------------|--------------------------------|
+| **Original Name**     | \`${BASENAME}\`                |
+| **Size**              | $(($SIZE / 1024 / 1024)) MB    |
+| **Status**            | **Complete (100%)**            |
+| **Password Protected**| $([ -n "$ZIP_PASSWORD" ] && echo "**YES**" || echo "**NO**") |
+
+---
+
+## Important Note
+
+**Please clean up this folder after downloading.**  
+GitHub repositories have size limits. Removing old files helps keep this repository fast and healthy.
+
+---
+
+*Generated by GitHub Actions*  
+
+Workflow by @TheyCallMeRubik  
+Built with ❤️ and hope for free iran
+EOF
           done
 
           rm -rf tmp_downloads
 
           # ==================== COMMIT & PUSH ====================
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-
           mkdir -p downloads
           cp -r "$BACKUP_DIR"/* downloads/ 2>/dev/null || true
 
-          # Update downloads README
-          cat > downloads/README.md << 'EOL'
-# Downloaded Files List
-
----
-EOL
+          # Update main README
+          printf '# Downloaded Files List\n---\n\n' > downloads/README.md
 
           for folder in downloads/*/; do
             [ -d "$folder" ] || continue
             FOLDER_NAME=$(basename "$folder")
             FOLDER_ENCODED=$(urlencode "$FOLDER_NAME")
-            echo "- [$FOLDER_NAME](./$FOLDER_ENCODED)" >> downloads/README.md
+            printf '- [%s](./%s)\n' "$FOLDER_NAME" "$FOLDER_ENCODED" >> downloads/README.md
           done
 
           git add -A downloads/
           git commit -m "[Download] Add files [skip ci]" || echo "No changes to commit"
+          
           git push origin HEAD:"${GITHUB_REF_NAME}" || {
             git fetch origin "${GITHUB_REF_NAME}"
             git reset --hard origin/"${GITHUB_REF_NAME}"
