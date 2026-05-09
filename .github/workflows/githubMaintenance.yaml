@@ -58,21 +58,21 @@ jobs:
 
           mkdir -p downloads
 
-          cat > downloads/README.md << 'EOF'
-# 📥 Downloads
-
----
-
-**This folder is currently empty.**
-
-Use the download workflows to add files here.
-
----
-
-**Important:** Please clean this folder regularly to keep the repository under GitHub size limits.
-
-*tool created by @TheyCallMeRubik*
-EOF
+          printf '%s\n' \
+          '# 📥 Downloads' \
+          '' \
+          '---' \
+          '' \
+          '**This folder is currently empty.**' \
+          '' \
+          'Use the download workflows to add files here.' \
+          '' \
+          '---' \
+          '' \
+          '**Important:** Please clean this folder regularly to keep the repository under GitHub size limits.' \
+          '' \
+          '*tool created by @TheyCallMeRubik*' \
+          > downloads/README.md
 
           git add downloads/README.md
 
@@ -92,17 +92,17 @@ EOF
           rm -rf pages
           mkdir -p pages
 
-          cat > pages/README.md << 'EOF'
-# 🌐 Pages Archive
-
----
-
-The folder is empty. Start browsing websites using the **Browse the Web** workflow.
-
----
-
-*Maintained by @TheyCallMeRubik*
-EOF
+          printf '%s\n' \
+          '# 🌐 Pages Archive' \
+          '' \
+          '---' \
+          '' \
+          'The folder is empty. Start browsing websites using the **Browse the Web** workflow.' \
+          '' \
+          '---' \
+          '' \
+          '*Maintained by @TheyCallMeRubik*' \
+          > pages/README.md
 
           git add pages/
 
@@ -122,17 +122,17 @@ EOF
           rm -rf videos
           mkdir -p videos
 
-          cat > videos/README.md << 'EOF'
-# 🎥 Videos
-
----
-
-The folder is empty. Use video downloader workflows to add content here.
-
----
-
-*Maintained by @TheyCallMeRubik*
-EOF
+          printf '%s\n' \
+          '# 🎥 Videos' \
+          '' \
+          '---' \
+          '' \
+          'The folder is empty. Use video downloader workflows to add content here.' \
+          '' \
+          '---' \
+          '' \
+          '*Maintained by @TheyCallMeRubik*' \
+          > videos/README.md
 
           git add videos/
 
