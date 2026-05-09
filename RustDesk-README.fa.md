@@ -1,4 +1,4 @@
-
+<div align="right">
 # 🔵 RustDesk Remote Desktop
 
 اجرای دسکتاپ کامل (XFCE + فایرفاکس) روی سرور رایگان گیت‌هاب با RustDesk.
@@ -20,3 +20,4 @@
 
 **مدت زمان**: حداکثر ۶ ساعت.
 
+</div>
