@@ -1,6 +1,6 @@
 <div align="center">
 
-![GitHub Repo](https://img.shields.io/badge/Status-Active-brightgreen)
+![GitHub Repo](https://img.shields.io/badge/Status-Inactive-red)
 ![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-Enabled-blue)
 
 **[[ English ](README.md) | [[🇮🇷 فارسی ]](#)]**
